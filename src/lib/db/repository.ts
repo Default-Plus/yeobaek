@@ -48,7 +48,6 @@ export const metaRepository = {
   async getSyncSettings(): Promise<SyncSettings> {
     const saved = await this.get<SyncSettings>(META_KEYS.SYNC_SETTINGS);
     return {
-      clientId: saved?.clientId ?? process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? '',
       autoSync: saved?.autoSync ?? true,
       userEmail: saved?.userEmail,
       userName: saved?.userName,

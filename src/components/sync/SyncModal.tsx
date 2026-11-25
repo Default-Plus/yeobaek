@@ -6,7 +6,6 @@ import {
   AlertCircle,
   Bell,
   CheckCircle2,
-  ChevronDown,
   Cloud,
   Download,
   Loader2,
@@ -17,13 +16,9 @@ import {
   X,
 } from 'lucide-react';
 import type { DesktopUpdateStatus } from '@/types/desktop';
-import {
-  exportLocalBackup,
-  importLocalBackup,
-  metaRepository,
-} from '@/lib/db/repository';
+import { exportLocalBackup, importLocalBackup } from '@/lib/db/repository';
 import { driveSyncEngine, type SyncStateSnapshot } from '@/lib/sync/driveSyncEngine';
-import { getBuiltInGoogleClientId, isNativeMobile } from '@/lib/sync/googleAuth';
+import { isNativeMobile } from '@/lib/sync/googleAuth';
 import {
   reminderScheduler,
   type NotificationPermissionState,
@@ -37,8 +32,6 @@ interface SyncModalProps {
 }
 
 export function SyncModal({ open, onClose, syncState }: SyncModalProps) {
-  const [clientId, setClientId] = useState('');
-  const [showAdvancedOAuth, setShowAdvancedOAuth] = useState(false);
   const [localError, setLocalError] = useState<string | null>(null);
   const [backupNotice, setBackupNotice] = useState<string | null>(null);
   const [notifPerm, setNotifPerm] = useState<NotificationPermissionState>('default');
@@ -47,19 +40,11 @@ export function SyncModal({ open, onClose, syncState }: SyncModalProps) {
   const [updateStatus, setUpdateStatus] = useState<DesktopUpdateStatus>({ phase: 'idle' });
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const builtInClientId = getBuiltInGoogleClientId();
-  const effectiveClientId = (clientId || builtInClientId).trim();
-
   useEffect(() => {
     if (!open) return;
     setLocalError(null);
     setBackupNotice(null);
     void reminderScheduler.getPermissionAsync().then(setNotifPerm);
-    void metaRepository.getSyncSettings().then((s) => {
-      const resolved = s.clientId || getBuiltInGoogleClientId();
-      setClientId(resolved);
-      setShowAdvancedOAuth(!resolved);
-    });
 
     const bridge = typeof window !== 'undefined' ? window.yeobaekDesktop : undefined;
     if (bridge?.isDesktop) {
@@ -70,17 +55,9 @@ export function SyncModal({ open, onClose, syncState }: SyncModalProps) {
 
   const handleConnect = async () => {
     setLocalError(null);
-    if (!effectiveClientId) {
-      setShowAdvancedOAuth(true);
-      setLocalError(
-        '이 빌드에는 Google OAuth Client ID가 아직 내장되어 있지 않습니다. 아래 고급 설정에서 입력하거나 환경변수에 등록해 주세요.'
-      );
-      return;
-    }
-
     setConnecting(true);
     try {
-      await driveSyncEngine.connect(effectiveClientId);
+      await driveSyncEngine.connect();
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : 'Google 로그인에 실패했습니다.');
     } finally {
@@ -255,47 +232,6 @@ export function SyncModal({ open, onClose, syncState }: SyncModalProps) {
                       )}
                       <span>Google 계정으로 로그인</span>
                     </button>
-
-                    {/* Developer / Self-host OAuth Client ID disclosure */}
-                    <div className="pt-0.5">
-                      <button
-                        type="button"
-                        onClick={() => setShowAdvancedOAuth((v) => !v)}
-                        className="inline-flex items-center gap-1 text-[11px] text-ink-muted transition-colors hover:text-ink-secondary"
-                      >
-                        <ChevronDown
-                          className={`h-3 w-3 transition-transform ${
-                            showAdvancedOAuth ? 'rotate-180' : ''
-                          }`}
-                        />
-                        <span>개발자 설정 (OAuth Client ID)</span>
-                      </button>
-
-                      {showAdvancedOAuth && (
-                        <div className="mt-2.5 space-y-1.5 rounded-lg border border-hairline/80 bg-paper p-3">
-                          <label
-                            htmlFor="google-client-id"
-                            className="block text-[11px] font-medium text-ink-secondary"
-                          >
-                            {isNativeMobile()
-                              ? '모바일 OAuth 2.0 Client ID (Android / iOS)'
-                              : '웹 OAuth 2.0 Client ID'}
-                          </label>
-                          <input
-                            id="google-client-id"
-                            type="text"
-                            value={clientId}
-                            onChange={(e) => setClientId(e.target.value)}
-                            placeholder="xxxx.apps.googleusercontent.com"
-                            className="w-full rounded-lg border border-hairline bg-paper-elevated px-3 py-2 text-xs text-ink placeholder:text-ink-muted focus:border-ink-secondary focus:outline-none"
-                          />
-                          <p className="text-[11px] text-ink-muted">
-                            GitHub Secrets 또는 <code>.env.local</code>에 Client ID를 등록해
-                            빌드하면 이 입력 없이 버튼만으로 로그인됩니다.
-                          </p>
-                        </div>
-                      )}
-                    </div>
                   </div>
                 )}
 

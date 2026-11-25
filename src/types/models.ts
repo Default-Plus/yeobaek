@@ -61,7 +61,6 @@ export interface SyncSummary {
 }
 
 export interface SyncSettings {
-  clientId: string;
   autoSync: boolean;
   userEmail?: string;
   userName?: string;
