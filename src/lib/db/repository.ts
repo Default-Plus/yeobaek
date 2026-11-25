@@ -339,6 +339,177 @@ export async function importLocalBackup(payload: {
   return { storiesCount: stories.length, notesCount: notes.length };
 }
 
+export const SEED_TIMESTAMP = 1_700_000_000_000;
+
+export const SEED_STORY_IDS = {
+  daily: 'seed-story-daily',
+  memo: 'seed-story-memo',
+  todo: 'seed-story-todo',
+  idea: 'seed-story-idea',
+} as const;
+
+export const SEED_NOTE_IDS = {
+  welcome: 'seed-note-welcome',
+  sampleTask: 'seed-note-sample-task',
+  sampleEvent: 'seed-note-sample-event',
+} as const;
+
+const DEFAULT_SEED_STORY_TITLES = new Set(['일상', '메모', '할 일', '아이디어']);
+const DEFAULT_SEED_NOTE_TITLES = new Set([
+  '여백에 오신 것을 환영합니다',
+  '오늘의 가장 중요한 일 한 가지 마무리하기',
+  '주간 회고 및 독서 시간',
+]);
+
+/**
+ * Returns true if the local database only contains untouched initial onboarding seed data
+ * (including legacy random-UUID seeds from versions prior to deterministic seed IDs).
+ */
+export async function isLocalOnlyUntouchedSeed(): Promise<boolean> {
+  const [stories, notes] = await Promise.all([
+    storyRepository.listAllIncludingDeleted(),
+    noteRepository.listAllIncludingDeleted(),
+  ]);
+
+  const activeStories = stories.filter((s) => !s.isDeleted);
+  const activeNotes = notes.filter((n) => !n.isDeleted);
+
+  if (activeStories.length === 0 && activeNotes.length === 0) return true;
+  if (activeStories.length > DEFAULT_SEED_STORY_TITLES.size) return false;
+  if (activeNotes.length > DEFAULT_SEED_NOTE_TITLES.size) return false;
+
+  const allDefaultStories = activeStories.every(
+    (s) =>
+      DEFAULT_SEED_STORY_TITLES.has(s.title) &&
+      (s.updatedAt <= SEED_TIMESTAMP + 5000 || s.updatedAt === s.createdAt)
+  );
+  const allDefaultNotes = activeNotes.every(
+    (n) =>
+      DEFAULT_SEED_NOTE_TITLES.has(n.title) &&
+      (n.updatedAt <= SEED_TIMESTAMP + 5000 || n.updatedAt === n.createdAt)
+  );
+
+  return allDefaultStories && allDefaultNotes;
+}
+
+export async function clearLocalSeedBeforeInitialPull(): Promise<void> {
+  const db = getDb();
+  await db.transaction('rw', [db.stories, db.notes], async () => {
+    await db.stories.clear();
+    await db.notes.clear();
+  });
+}
+
+/**
+ * Safely merges duplicate default stories (created when two devices seeded random UUIDs before syncing)
+ * without losing any user-written notes. Re-parents all user notes into the canonical story,
+ * deduplicates identical untouched welcome notes, and soft-deletes the duplicate stories.
+ */
+export async function deduplicateSeedArtifacts(): Promise<{
+  changedStories: Story[];
+  changedNotes: NoteItem[];
+}> {
+  const db = getDb();
+  const [allStories, allNotes] = await Promise.all([
+    db.stories.toArray(),
+    db.notes.toArray(),
+  ]);
+
+  const activeStories = allStories.filter((s) => !s.isDeleted);
+  const activeNotes = allNotes.filter((n) => !n.isDeleted);
+
+  const now = Date.now();
+  const changedStoryMap = new Map<string, Story>();
+  const changedNoteMap = new Map<string, NoteItem>();
+
+  // 1. Deduplicate default stories that share the exact same default title
+  const storiesByDefaultTitle = new Map<string, Story[]>();
+  for (const story of activeStories) {
+    if (!DEFAULT_SEED_STORY_TITLES.has(story.title)) continue;
+    const list = storiesByDefaultTitle.get(story.title) ?? [];
+    list.push(story);
+    storiesByDefaultTitle.set(story.title, list);
+  }
+
+  const storyNoteCount = new Map<string, number>();
+  for (const n of activeNotes) {
+    storyNoteCount.set(n.storyId, (storyNoteCount.get(n.storyId) ?? 0) + 1);
+  }
+
+  for (const [, group] of storiesByDefaultTitle) {
+    if (group.length < 2) continue;
+
+    // Pick canonical: prefer deterministic seed ID, then story with most notes, then earliest createdAt
+    group.sort((a, b) => {
+      const aDet = a.id.startsWith('seed-story-') ? 0 : 1;
+      const bDet = b.id.startsWith('seed-story-') ? 0 : 1;
+      if (aDet !== bDet) return aDet - bDet;
+      const aCnt = storyNoteCount.get(a.id) ?? 0;
+      const bCnt = storyNoteCount.get(b.id) ?? 0;
+      if (aCnt !== bCnt) return bCnt - aCnt;
+      return a.createdAt - b.createdAt;
+    });
+
+    const canonical = group[0];
+    const duplicates = group.slice(1);
+
+    for (const dup of duplicates) {
+      // Re-parent every active note belonging to the duplicate story into canonical
+      for (const note of activeNotes) {
+        if (note.storyId === dup.id) {
+          const moved: NoteItem = {
+            ...note,
+            storyId: canonical.id,
+            updatedAt: now,
+          };
+          note.storyId = canonical.id;
+          note.updatedAt = now;
+          changedNoteMap.set(moved.id, moved);
+        }
+      }
+
+      const deletedDup: Story = {
+        ...dup,
+        isDeleted: true,
+        updatedAt: now,
+      };
+      changedStoryMap.set(deletedDup.id, deletedDup);
+    }
+  }
+
+  // 2. Deduplicate identical untouched welcome/sample notes
+  const seenSeedNotes = new Map<string, NoteItem>();
+  const sortedActiveNotes = [...activeNotes].sort((a, b) => a.createdAt - b.createdAt);
+
+  for (const note of sortedActiveNotes) {
+    if (!DEFAULT_SEED_NOTE_TITLES.has(note.title)) continue;
+    const signature = `${note.title}::${note.content}`;
+    const existing = seenSeedNotes.get(signature);
+    if (!existing) {
+      seenSeedNotes.set(signature, note);
+    } else {
+      const deletedNote: NoteItem = {
+        ...note,
+        isDeleted: true,
+        updatedAt: now,
+      };
+      changedNoteMap.set(deletedNote.id, deletedNote);
+    }
+  }
+
+  const changedStories = Array.from(changedStoryMap.values());
+  const changedNotes = Array.from(changedNoteMap.values());
+
+  if (changedStories.length > 0 || changedNotes.length > 0) {
+    await db.transaction('rw', [db.stories, db.notes], async () => {
+      if (changedStories.length > 0) await db.stories.bulkPut(changedStories);
+      if (changedNotes.length > 0) await db.notes.bulkPut(changedNotes);
+    });
+  }
+
+  return { changedStories, changedNotes };
+}
+
 export async function ensureSeedData(): Promise<void> {
   const db = getDb();
   const seeded = await metaRepository.get<boolean>(META_KEYS.SEEDED);
@@ -350,40 +521,39 @@ export async function ensureSeedData(): Promise<void> {
     return;
   }
 
-  const now = Date.now();
   const today = getTodayString();
   const tomorrow = addDays(today, 1);
 
   const storyDaily: Story = {
-    id: generateId(),
+    id: SEED_STORY_IDS.daily,
     title: '일상',
     order: 0,
-    createdAt: now - 4000,
-    updatedAt: now - 4000,
+    createdAt: SEED_TIMESTAMP,
+    updatedAt: SEED_TIMESTAMP,
     isDeleted: false,
   };
   const storyMemo: Story = {
-    id: generateId(),
+    id: SEED_STORY_IDS.memo,
     title: '메모',
     order: 1,
-    createdAt: now - 3000,
-    updatedAt: now - 3000,
+    createdAt: SEED_TIMESTAMP + 1000,
+    updatedAt: SEED_TIMESTAMP + 1000,
     isDeleted: false,
   };
   const storyTodo: Story = {
-    id: generateId(),
+    id: SEED_STORY_IDS.todo,
     title: '할 일',
     order: 2,
-    createdAt: now - 2000,
-    updatedAt: now - 2000,
+    createdAt: SEED_TIMESTAMP + 2000,
+    updatedAt: SEED_TIMESTAMP + 2000,
     isDeleted: false,
   };
   const storyIdea: Story = {
-    id: generateId(),
+    id: SEED_STORY_IDS.idea,
     title: '아이디어',
     order: 3,
-    createdAt: now - 1000,
-    updatedAt: now - 1000,
+    createdAt: SEED_TIMESTAMP + 3000,
+    updatedAt: SEED_TIMESTAMP + 3000,
     isDeleted: false,
   };
 
@@ -495,30 +665,30 @@ export async function ensureSeedData(): Promise<void> {
 
   const notes: NoteItem[] = [
     {
-      id: generateId(),
+      id: SEED_NOTE_IDS.welcome,
       storyId: storyDaily.id,
       type: 'note',
       title: '여백에 오신 것을 환영합니다',
       content: JSON.stringify(welcomeDoc),
       targetDate: today,
-      createdAt: now - 300,
-      updatedAt: now - 300,
+      createdAt: SEED_TIMESTAMP + 100,
+      updatedAt: SEED_TIMESTAMP + 100,
       isDeleted: false,
     },
     {
-      id: generateId(),
+      id: SEED_NOTE_IDS.sampleTask,
       storyId: storyTodo.id,
       type: 'task',
       title: '오늘의 가장 중요한 일 한 가지 마무리하기',
       content: JSON.stringify(sampleTaskDoc),
       targetDate: today,
       isCompleted: false,
-      createdAt: now - 200,
-      updatedAt: now - 200,
+      createdAt: SEED_TIMESTAMP + 200,
+      updatedAt: SEED_TIMESTAMP + 200,
       isDeleted: false,
     },
     {
-      id: generateId(),
+      id: SEED_NOTE_IDS.sampleEvent,
       storyId: storyDaily.id,
       type: 'event',
       title: '주간 회고 및 독서 시간',
@@ -526,8 +696,8 @@ export async function ensureSeedData(): Promise<void> {
       targetDate: tomorrow,
       startTime: '19:00',
       endTime: '20:30',
-      createdAt: now - 100,
-      updatedAt: now - 100,
+      createdAt: SEED_TIMESTAMP + 300,
+      updatedAt: SEED_TIMESTAMP + 300,
       isDeleted: false,
     },
   ];

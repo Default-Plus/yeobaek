@@ -1,8 +1,12 @@
 'use client';
 
 import {
+  clearLocalSeedBeforeInitialPull,
+  deduplicateSeedArtifacts,
+  isLocalOnlyUntouchedSeed,
   metaRepository,
   noteRepository,
+  SEED_TIMESTAMP,
   storyRepository,
   subscribeToLocalMutations,
 } from '@/lib/db/repository';
@@ -303,17 +307,24 @@ class DriveSyncEngine {
    *   keeps the newer updatedAt version and saves the older version as "(충돌 사본)"
    */
   private async performDiffSync(token: string): Promise<SyncSummary> {
-    const [localStories, localNotes, lastSyncIndex] = await Promise.all([
-      storyRepository.listAllIncludingDeleted(),
-      noteRepository.listAllIncludingDeleted(),
-      metaRepository.getLastSyncIndex(),
-    ]);
-
+    const lastSyncIndex = await metaRepository.getLastSyncIndex();
     const baseIndex = lastSyncIndex ?? emptyIndex();
     const remoteIndexMeta = await this.findAppDataFile(token, SYNC_INDEX_FILENAME);
     const remoteIndex: SyncIndex = remoteIndexMeta
       ? (await this.downloadJson<SyncIndex>(token, remoteIndexMeta.id)) ?? emptyIndex()
       : emptyIndex();
+
+    // On a brand-new device's first sync, discard untouched local onboarding seed data
+    // when Google Drive already has remote stories so default stories never duplicate.
+    const hasRemoteStories = Object.keys(remoteIndex.stories).length > 0;
+    if (!lastSyncIndex && hasRemoteStories && (await isLocalOnlyUntouchedSeed())) {
+      await clearLocalSeedBeforeInitialPull();
+    }
+
+    const [localStories, localNotes] = await Promise.all([
+      storyRepository.listAllIncludingDeleted(),
+      noteRepository.listAllIncludingDeleted(),
+    ]);
 
     const mergedIndex: SyncIndex = {
       version: 1,
@@ -339,7 +350,13 @@ class DriveSyncEngine {
       const baseEntry = baseIndex.stories[id];
       const filename = `story_${id}.json`;
 
-      const localChanged = Boolean(local && (!baseEntry || local.updatedAt > baseEntry.updatedAt));
+      const isUntouchedSeed = Boolean(local && local.updatedAt <= SEED_TIMESTAMP + 5000);
+      const localChanged = Boolean(
+        local &&
+          (!baseEntry
+            ? !(isUntouchedSeed && remoteEntry)
+            : local.updatedAt > baseEntry.updatedAt)
+      );
       const remoteChanged = Boolean(
         remoteEntry && (!baseEntry || remoteEntry.updatedAt > baseEntry.updatedAt)
       );
@@ -394,7 +411,13 @@ class DriveSyncEngine {
       const baseEntry = baseIndex.notes[id];
       const filename = `note_${id}.json`;
 
-      const localChanged = Boolean(local && (!baseEntry || local.updatedAt > baseEntry.updatedAt));
+      const isUntouchedSeedNote = Boolean(local && local.updatedAt <= SEED_TIMESTAMP + 5000);
+      const localChanged = Boolean(
+        local &&
+          (!baseEntry
+            ? !(isUntouchedSeedNote && remoteEntry)
+            : local.updatedAt > baseEntry.updatedAt)
+      );
       const remoteChanged = Boolean(
         remoteEntry && (!baseEntry || remoteEntry.updatedAt > baseEntry.updatedAt)
       );
@@ -476,7 +499,43 @@ class DriveSyncEngine {
       }
     }
 
-    // 3. Persist updated sync_index.json to Google Drive & local meta
+    // 3. Self-heal any legacy duplicate default stories/welcome notes and propagate cleanup to Drive
+    const { changedStories: cleanedStories, changedNotes: cleanedNotes } =
+      await deduplicateSeedArtifacts();
+
+    for (const story of cleanedStories) {
+      const existingFileId = mergedIndex.stories[story.id]?.fileId;
+      const fileId = await this.upsertJsonFile(
+        token,
+        `story_${story.id}.json`,
+        story,
+        existingFileId
+      );
+      mergedIndex.stories[story.id] = {
+        updatedAt: story.updatedAt,
+        isDeleted: story.isDeleted,
+        fileId,
+      };
+      uploaded++;
+    }
+
+    for (const note of cleanedNotes) {
+      const existingFileId = mergedIndex.notes[note.id]?.fileId;
+      const fileId = await this.upsertJsonFile(
+        token,
+        `note_${note.id}.json`,
+        note,
+        existingFileId
+      );
+      mergedIndex.notes[note.id] = {
+        updatedAt: note.updatedAt,
+        isDeleted: note.isDeleted,
+        fileId,
+      };
+      uploaded++;
+    }
+
+    // 4. Persist updated sync_index.json to Google Drive & local meta
     mergedIndex.updatedAt = Date.now();
     await this.upsertJsonFile(token, SYNC_INDEX_FILENAME, mergedIndex, remoteIndexMeta?.id);
     await metaRepository.saveLastSyncIndex(mergedIndex);
