@@ -15,7 +15,8 @@
     "export:desktop": "cross-env NEXT_EXPORT=true next build",
     "build:exe": "npm run icon:generate && npm run export:desktop && electron-builder --win portable --x64",
     "build:installer": "npm run icon:generate && npm run export:desktop && electron-builder --win nsis --x64",
-    "build:desktop:all": "npm run icon:generate && npm run export:desktop && electron-builder --win nsis portable --x64"
+    "build:desktop:all": "npm run icon:generate && npm run export:desktop && electron-builder --win nsis portable --x64",
+    "mobile:sync": "npm run export:desktop && cap sync"
   },
   "build": {
     "appId": "app.defaultplus.yeobaek",
@@ -55,13 +56,15 @@
       "!node_modules/postcss/**/*",
       "!node_modules/sharp/**/*",
       "!node_modules/busboy/**/*",
-      "!node_modules/@img/**/*"
+      "!node_modules/@img/**/*",
+      "!node_modules/@capacitor/**/*"
     ],
     "publish": [
       {
         "provider": "github",
         "owner": "Default-Plus",
-        "repo": "yeobaek"
+        "repo": "yeobaek",
+        "releaseType": "release"
       }
     ],
     "extraResources": [
@@ -105,6 +108,11 @@
     }
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/browser": "^8.0.5",
+    "@capacitor/core": "^8.6.2",
+    "@capacitor/local-notifications": "^8.3.1",
+    "@capacitor/status-bar": "^8.0.4",
     "@tiptap/extension-highlight": "^2.11.5",
     "@tiptap/extension-placeholder": "^2.11.5",
     "@tiptap/extension-task-item": "^2.11.5",
@@ -123,6 +131,9 @@
     "react-dom": "^19.0.0"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.6.2",
+    "@capacitor/cli": "^8.6.2",
+    "@capacitor/ios": "^8.6.2",
     "@tailwindcss/typography": "^0.5.16",
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.10",

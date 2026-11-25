@@ -29,6 +29,7 @@ const META_KEYS = {
   SYNC_SETTINGS: 'sync_settings',
   LAST_SYNCED_AT: 'last_synced_at',
   NOTIFIED_REMINDERS: 'notified_reminders',
+  MOBILE_REFRESH_TOKEN: 'mobile_oauth_refresh_token',
   THEME: 'app_theme',
 } as const;
 
@@ -83,6 +84,19 @@ export const metaRepository = {
     const map = await this.getNotifiedReminders();
     map[noteId] = reminderAt;
     await this.set(META_KEYS.NOTIFIED_REMINDERS, map);
+  },
+
+  async getMobileRefreshToken(): Promise<string | undefined> {
+    return this.get<string>(META_KEYS.MOBILE_REFRESH_TOKEN);
+  },
+
+  async saveMobileRefreshToken(token: string | undefined): Promise<void> {
+    const db = getDb();
+    if (!token) {
+      await db.meta.delete(META_KEYS.MOBILE_REFRESH_TOKEN);
+    } else {
+      await db.meta.put({ key: META_KEYS.MOBILE_REFRESH_TOKEN, value: token });
+    }
   },
 };
 

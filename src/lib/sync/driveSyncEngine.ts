@@ -6,7 +6,11 @@ import {
   storyRepository,
   subscribeToLocalMutations,
 } from '@/lib/db/repository';
-import { googleAuthManager } from './googleAuth';
+import {
+  getBuiltInGoogleClientId,
+  googleAuthManager,
+  isNativeMobile,
+} from './googleAuth';
 import type {
   NoteItem,
   Story,
@@ -80,12 +84,21 @@ class DriveSyncEngine {
     if (this.initialized || typeof window === 'undefined') return;
     this.initialized = true;
 
-    const [settings, lastSyncedAt] = await Promise.all([
+    const [settings, lastSyncedAt, savedRefreshToken] = await Promise.all([
       metaRepository.getSyncSettings(),
       metaRepository.getLastSyncedAt(),
+      metaRepository.getMobileRefreshToken(),
     ]);
 
-    const connected = Boolean(settings.userEmail && googleAuthManager.hasValidToken());
+    const resolvedClientId = (settings.clientId || getBuiltInGoogleClientId()).trim();
+
+    if (isNativeMobile() && savedRefreshToken && resolvedClientId && navigator.onLine) {
+      await googleAuthManager.refreshAccessToken(resolvedClientId, savedRefreshToken);
+    }
+
+    const connected = Boolean(
+      (settings.userEmail || savedRefreshToken) && googleAuthManager.hasValidToken()
+    );
     this.emit({
       isConnected: connected,
       userEmail: settings.userEmail,
@@ -93,6 +106,10 @@ class DriveSyncEngine {
       lastSyncedAt,
       status: !navigator.onLine ? 'offline' : connected ? 'synced' : 'disconnected',
     });
+
+    if (connected && navigator.onLine) {
+      void this.syncNow({ interactive: false });
+    }
 
     this.unsubLocal = subscribeToLocalMutations(() => {
       this.scheduleAutoSync();
@@ -151,14 +168,28 @@ class DriveSyncEngine {
 
   async connect(clientId?: string): Promise<void> {
     const settings = await metaRepository.getSyncSettings();
-    const resolvedClientId = (clientId ?? settings.clientId).trim();
+    const resolvedClientId = (
+      clientId ??
+      settings.clientId ??
+      getBuiltInGoogleClientId()
+    ).trim();
     if (!resolvedClientId) {
-      throw new Error('먼저 Google OAuth Client ID를 입력해 주세요.');
+      throw new Error(
+        'Google OAuth Client ID가 아직 설정되지 않았습니다. 개발자 설정에서 Client ID를 입력하거나 환경변수에 등록해 주세요.'
+      );
     }
 
-    await metaRepository.saveSyncSettings({ clientId: resolvedClientId });
-    const token = await googleAuthManager.requestToken(resolvedClientId, 'select_account');
-    const info = await googleAuthManager.fetchUserInfo(token);
+    if (clientId && clientId.trim()) {
+      await metaRepository.saveSyncSettings({ clientId: resolvedClientId });
+    }
+    const { accessToken, refreshToken } = await googleAuthManager.requestToken(
+      resolvedClientId,
+      'select_account'
+    );
+    if (refreshToken) {
+      await metaRepository.saveMobileRefreshToken(refreshToken);
+    }
+    const info = await googleAuthManager.fetchUserInfo(accessToken);
 
     await metaRepository.saveSyncSettings({
       clientId: resolvedClientId,
@@ -183,6 +214,7 @@ class DriveSyncEngine {
       this.debounceTimer = null;
     }
     googleAuthManager.signOut();
+    await metaRepository.saveMobileRefreshToken(undefined);
     await metaRepository.saveSyncSettings({
       userEmail: undefined,
       userName: undefined,
@@ -206,14 +238,22 @@ class DriveSyncEngine {
     if (this.isRunning) return null;
 
     const settings = await metaRepository.getSyncSettings();
+    const resolvedClientId = (settings.clientId || getBuiltInGoogleClientId()).trim();
     let token = googleAuthManager.getAccessToken();
+
+    if (!token && isNativeMobile() && resolvedClientId) {
+      const savedRefresh = await metaRepository.getMobileRefreshToken();
+      if (savedRefresh) {
+        token = await googleAuthManager.refreshAccessToken(resolvedClientId, savedRefresh);
+      }
+    }
 
     if (!token) {
       if (!options.interactive) {
         this.emit({ isConnected: false, status: 'disconnected' });
         return null;
       }
-      if (!settings.clientId) {
+      if (!resolvedClientId) {
         this.emit({
           status: 'error',
           errorMessage: 'Google Client ID가 설정되어 있지 않습니다.',
@@ -221,7 +261,11 @@ class DriveSyncEngine {
         return null;
       }
       try {
-        token = await googleAuthManager.requestToken(settings.clientId, '');
+        const result = await googleAuthManager.requestToken(resolvedClientId, '');
+        token = result.accessToken;
+        if (result.refreshToken) {
+          await metaRepository.saveMobileRefreshToken(result.refreshToken);
+        }
         const info = await googleAuthManager.fetchUserInfo(token);
         await metaRepository.saveSyncSettings({
           userEmail: info.email ?? settings.userEmail,
@@ -234,7 +278,7 @@ class DriveSyncEngine {
           userName: info.name ?? settings.userName,
         });
       } catch (err) {
-        const message = err instanceof Error ? err.message : 'Google 인증에 실패했습니다.';
+        const message = err instanceof Error ? err.message : 'Google 로그인에 실패했습니다.';
         this.emit({ status: 'error', errorMessage: message });
         return null;
       }

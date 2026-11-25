@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import dynamic from 'next/dynamic';
+import { Capacitor } from '@capacitor/core';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bell, X } from 'lucide-react';
 import type { ActiveView, NoteItemType } from '@/types/models';
@@ -91,6 +93,15 @@ export function YeobaekApp() {
     [notes, editingNoteId]
   );
 
+  // Sync native status bar color with current paper/ink theme on Android & iOS
+  const applyNativeStatusBar = (dark: boolean) => {
+    if (typeof window === 'undefined' || !Capacitor.isNativePlatform()) return;
+    void StatusBar.setStyle({ style: dark ? Style.Dark : Style.Light }).catch(() => undefined);
+    void StatusBar.setBackgroundColor({ color: dark ? '#171614' : '#FAF9F6' }).catch(
+      () => undefined
+    );
+  };
+
   // Initialize theme, Drive sync engine, and reminder scheduler
   useEffect(() => {
     void metaRepository.get<'light' | 'dark'>('app_theme').then((saved) => {
@@ -99,6 +110,7 @@ export function YeobaekApp() {
         (!saved && window.matchMedia?.('(prefers-color-scheme: dark)').matches);
       setIsDark(preferDark);
       document.documentElement.classList.toggle('dark', preferDark);
+      applyNativeStatusBar(preferDark);
     });
 
     const unsubSync = driveSyncEngine.subscribe(setSyncState);
@@ -129,10 +141,17 @@ export function YeobaekApp() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
+  // Keep native Android/iOS OS-level reminder schedules synced with local notes
+  useEffect(() => {
+    if (!ready) return;
+    void reminderScheduler.syncNativeSchedules(notes);
+  }, [ready, notes]);
+
   const handleToggleTheme = () => {
     const next = !isDark;
     setIsDark(next);
     document.documentElement.classList.toggle('dark', next);
+    applyNativeStatusBar(next);
     void metaRepository.set('app_theme', next ? 'dark' : 'light');
   };
 

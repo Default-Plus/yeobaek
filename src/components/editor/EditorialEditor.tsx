@@ -264,7 +264,7 @@ export function EditorialEditor({
       className="flex min-h-screen flex-col bg-paper"
     >
       {/* Minimal Distraction-Free Top Bar */}
-      <header className="sticky top-0 z-20 border-b border-hairline/70 bg-paper/90 backdrop-blur-md">
+      <header className="pt-safe sticky top-0 z-20 border-b border-hairline/70 bg-paper/90 backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 px-5 py-3.5 sm:px-8">
           <div className="flex items-center gap-3">
             <button
@@ -475,7 +475,7 @@ export function EditorialEditor({
       )}
 
       {/* Quiet Fixed Bottom Metadata Bar */}
-      <footer className="fixed inset-x-0 bottom-0 z-20 border-t border-hairline/75 bg-paper/95 backdrop-blur-md">
+      <footer className="pb-safe fixed inset-x-0 bottom-0 z-20 border-t border-hairline/75 bg-paper/95 backdrop-blur-md">
         {/* Expandable Date / Reminder Panel */}
         {openMetaPanel && (
           <div className="border-b border-hairline/70 bg-paper-subtle/60">

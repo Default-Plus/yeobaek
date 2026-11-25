@@ -9,8 +9,8 @@
 - **미니멀 Tiptap 에디터:** 선택 시에만 나타나는 플로팅 버블 메뉴, `- [ ] ` 인라인 체크리스트, `@오늘`/`@내일`/`@YYYY-MM-DD` 날짜 트리거 감지
 - **통합 뷰 전환:** 이야기(Stories) · 캘린더(Calendar) · 할 일(To-do, 글 속 인라인 체크리스트 포함)
 - **Local-First (Dexie.js / IndexedDB):** 즉각적인 로컬 저장, 오프라인 완전 동작, 로컬 JSON 백업 내보내기/가져오기
-- **Google Drive API v3 동기화:** `appDataFolder` + `sync_index.json` 기반 변경분(Diff) 동기화, 수정 후 4초 자동 디바운스, 오프라인 동시 수정 시 `(충돌 사본)` 자동 보존
-- **리마인더 · PWA · Windows 데스크탑 앱:** Web Notifications API + 앱 내 토스트 알림, 오프라인 캐시 Service Worker, Electron NSIS 설치 프로그램 및 `electron-updater` 자동 업데이트 지원
+- **Google Drive API v3 동기화:** 원클릭 Google 계정 로그인(웹/데스크탑 GIS + 모바일 시스템 브라우저 OAuth 2.0 PKCE), `appDataFolder` + `sync_index.json` 기반 변경분(Diff) 동기화, 수정 후 4초 자동 디바운스, 오프라인 동시 수정 시 `(충돌 사본)` 자동 보존
+- **멀티 플랫폼 배포:** 웹/PWA · Windows 설치 프로그램(`.exe`, `electron-updater` 자동 업데이트) · Android(`.apk`, Capacitor) · iOS(`ios/` Xcode 프로젝트, 네이티브 예약 알림)
 
 ## 실행 방법
 
@@ -19,26 +19,30 @@ npm install
 npm run dev
 ```
 
-## Windows 설치 프로그램 빌드 & 자동 업데이트 릴리즈
+## 데스크탑 & 모바일 빌드 · 자동 릴리즈
 
-### 로컬 빌드
-```powershell
-$env:CSC_IDENTITY_AUTO_DISCOVERY = "false"
-npm run build:installer
-```
-
-### GitHub Actions 자동 릴리즈 (추천)
-버전 태그(`v*`)를 푸시하면 `.github/workflows/release.yml`이 Windows 설치 파일(`Yeobaek-Setup-<version>.exe`)과 자동 업데이트 메타데이터(`latest.yml`, `.blockmap`)를 자동으로 빌드해 GitHub Releases에 업로드합니다.
+### GitHub Actions 통합 자동 릴리즈 (Windows `.exe` + Android `.apk`)
+버전 태그(`v*`)를 푸시하면 `.github/workflows/release.yml`이 **Windows 설치 파일(`Yeobaek-Setup-<version>.exe`)**과 **Android 설치 파일(`Yeobaek-v<version>-android.apk`)**을 자동으로 빌드해 GitHub Releases에 함께 업로드합니다.
 
 ```bash
 npm version patch
 git push origin main --follow-tags
 ```
 
-> Public 레포지토리에서 `electron-updater`가 GitHub Releases의 최신 버전을 자동으로 감지·다운로드해 앱 재시작 시 적용합니다.
+### 모바일 로컬 동기화 (Capacitor)
+```bash
+npm run mobile:sync     # 정적 빌드(out/) 후 android/·ios/ 동기화
+npx cap open android    # Android Studio 열기
+npx cap open ios        # Xcode 열기 (macOS)
+```
 
-## Google Drive 동기화 설정 (선택)
+## Google 계정 로그인 & Drive 동기화 설정
 
-1. Google Cloud Console에서 **Google Drive API**를 활성화하고 OAuth 2.0 웹 애플리케이션 클라이언트 ID를 발급받습니다.
-2. 승인된 JavaScript 원본에 `http://localhost:3000`, `http://localhost:45821` (데스크탑 앱) 및 배포 도메인을 추가합니다.
-3. `.env.local`에 `NEXT_PUBLIC_GOOGLE_CLIENT_ID=...`를 설정하거나, 앱 내 우측 상단 구름 아이콘(동기화 설정)에서 직접 입력해 연결합니다.
+1. [Google Cloud Console](https://console.cloud.google.com/)에서 **Google Drive API**를 활성화하고 OAuth 동의 화면(`.../auth/drive.appdata`)을 설정합니다.
+2. OAuth 2.0 클라이언트 ID를 발급합니다:
+   - **웹 / Windows `.exe`용 (웹 애플리케이션):** 승인된 JavaScript 원본에 `http://localhost:3000`, `http://localhost:45821`, 배포 도메인 추가
+   - **Android / iOS용 (모바일 PKCE):** 리디렉션 URI 스킴 `app.defaultplus.yeobaek:/oauth2redirect` 사용
+3. 로컬은 `.env.local`, 자동 릴리즈는 GitHub **Settings → Secrets → Actions**에 아래 값을 등록합니다:
+   - `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
+   - `NEXT_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` (선택)
+   - `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` (선택)
