@@ -50,7 +50,7 @@ export default function TermsPage() {
         <section className="space-y-2">
           <h2 className="font-serif text-base font-bold text-ink">4. 문의처</h2>
           <p>
-            약관 및 서비스 이용 관련 문의는 <code>namgite0310@gmail.com</code>으로 연락해 주세요.
+            약관 및 서비스 이용 관련 문의는 <code>default_plus@naver.com</code>으로 연락해 주세요.
           </p>
         </section>
       </article>

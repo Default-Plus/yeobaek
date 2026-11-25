@@ -69,7 +69,7 @@ export default function PrivacyPage() {
         <section className="space-y-2">
           <h2 className="font-serif text-base font-bold text-ink">4. 문의처</h2>
           <p>
-            개인정보 처리와 관련한 문의는 개발자 이메일(<code>namgite0310@gmail.com</code>)로 연락해
+            개인정보 처리와 관련한 문의는 개발자 이메일(<code>default_plus@naver.com</code>)로 연락해
             주세요.
           </p>
         </section>
