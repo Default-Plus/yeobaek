@@ -1,0 +1,231 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --bg-paper: #faf9f6;
+  --bg-subtle: #f3f1eb;
+  --bg-elevated: #ffffff;
+  --ink-primary: #1f1e1c;
+  --ink-secondary: #68645b;
+  --ink-muted: #9e998e;
+  --border-hairline: #e6e2d8;
+  --accent: #b5654d;
+  --accent-soft: #f5ebe6;
+}
+
+.dark {
+  --bg-paper: #171614;
+  --bg-subtle: #201f1c;
+  --bg-elevated: #252420;
+  --ink-primary: #ebe8e0;
+  --ink-secondary: #a8a399;
+  --ink-muted: #6e6a62;
+  --border-hairline: #2d2b27;
+  --accent: #cf846b;
+  --accent-soft: #2e231f;
+}
+
+html,
+body {
+  background-color: var(--bg-paper);
+  color: var(--ink-primary);
+  font-feature-settings: "kern" 1, "liga" 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background-color: var(--accent-soft);
+  color: var(--ink-primary);
+}
+
+/* Scrollbar minimalism */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-hairline);
+  border-radius: 9999px;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Tiptap Editorial Typography */
+.yeobaek-editor .ProseMirror {
+  outline: none;
+  min-height: 46vh;
+  color: var(--ink-primary);
+  font-size: 1.02rem;
+  line-height: 1.92;
+  letter-spacing: -0.008em;
+}
+
+.yeobaek-editor .ProseMirror > * + * {
+  margin-top: 0.72em;
+}
+
+.yeobaek-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: var(--ink-muted);
+  pointer-events: none;
+  height: 0;
+}
+
+.yeobaek-editor .ProseMirror h1,
+.yeobaek-editor .ProseMirror h2,
+.yeobaek-editor .ProseMirror h3 {
+  font-family: var(--font-serif), Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.4;
+  color: var(--ink-primary);
+  margin-top: 1.6em;
+  margin-bottom: 0.45em;
+}
+
+.yeobaek-editor .ProseMirror h1 {
+  font-size: 1.45rem;
+}
+
+.yeobaek-editor .ProseMirror h2 {
+  font-size: 1.25rem;
+}
+
+.yeobaek-editor .ProseMirror h3 {
+  font-size: 1.1rem;
+}
+
+.yeobaek-editor .ProseMirror blockquote {
+  border-left: 2px solid var(--border-hairline);
+  padding-left: 1.1rem;
+  margin-left: 0;
+  color: var(--ink-secondary);
+  font-style: normal;
+}
+
+.yeobaek-editor .ProseMirror code {
+  background-color: var(--bg-subtle);
+  color: var(--ink-primary);
+  border-radius: 4px;
+  padding: 0.12em 0.36em;
+  font-size: 0.88em;
+}
+
+.yeobaek-editor .ProseMirror pre {
+  background-color: var(--bg-subtle);
+  border: 1px solid var(--border-hairline);
+  border-radius: 8px;
+  padding: 0.9rem 1.1rem;
+  overflow-x: auto;
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.yeobaek-editor .ProseMirror pre code {
+  background: transparent;
+  padding: 0;
+}
+
+.yeobaek-editor .ProseMirror mark {
+  background-color: var(--accent-soft);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0.05em 0.18em;
+}
+
+.yeobaek-editor .ProseMirror hr {
+  border: none;
+  border-top: 1px solid var(--border-hairline);
+  margin: 2rem 0;
+}
+
+.yeobaek-editor .ProseMirror ul:not([data-type="taskList"]) {
+  list-style-type: disc;
+  padding-left: 1.35rem;
+}
+
+.yeobaek-editor .ProseMirror ol {
+  list-style-type: decimal;
+  padding-left: 1.35rem;
+}
+
+/* Tiptap Task List & Inline Checkboxes */
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding: 0;
+  margin: 0.75rem 0;
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin: 0.42rem 0;
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li > label {
+  flex: 0 0 auto;
+  margin-top: 0.38rem;
+  user-select: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1.35px solid var(--ink-muted);
+  border-radius: 4px;
+  background-color: transparent;
+  cursor: pointer;
+  position: relative;
+  transition: border-color 180ms ease, background-color 180ms ease;
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:hover {
+  border-color: var(--ink-primary);
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:checked {
+  background-color: var(--ink-primary);
+  border-color: var(--ink-primary);
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li > label input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 5px;
+  height: 9px;
+  border: solid var(--bg-paper);
+  border-width: 0 1.6px 1.6px 0;
+  transform: rotate(45deg);
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li > div {
+  flex: 1 1 auto;
+}
+
+.yeobaek-editor .ProseMirror ul[data-type="taskList"] li[data-checked="true"] > div {
+  color: var(--ink-muted);
+  text-decoration: line-through;
+  text-decoration-color: var(--border-hairline);
+}

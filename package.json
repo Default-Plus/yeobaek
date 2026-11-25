@@ -1,0 +1,140 @@
+{
+  "name": "yeobaek",
+  "version": "0.1.0",
+  "description": "타이포그래피 중심의 Local-First 미니멀 글쓰기 & 개인 생산성 앱",
+  "author": "Default_Plus",
+  "private": true,
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "icon:generate": "node scripts/generate-icon.mjs",
+    "export:desktop": "cross-env NEXT_EXPORT=true next build",
+    "build:exe": "npm run icon:generate && npm run export:desktop && electron-builder --win portable --x64",
+    "build:installer": "npm run icon:generate && npm run export:desktop && electron-builder --win nsis --x64",
+    "build:desktop:all": "npm run icon:generate && npm run export:desktop && electron-builder --win nsis portable --x64"
+  },
+  "build": {
+    "appId": "app.defaultplus.yeobaek",
+    "productName": "Yeobaek",
+    "asar": true,
+    "compression": "maximum",
+    "npmRebuild": false,
+    "nodeGypRebuild": false,
+    "electronLanguages": [
+      "ko",
+      "en-US"
+    ],
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "package.json",
+      "!node_modules/next/**/*",
+      "!node_modules/@next/**/*",
+      "!node_modules/@swc/**/*",
+      "!node_modules/@tiptap/**/*",
+      "!node_modules/prosemirror-*/**/*",
+      "!node_modules/framer-motion/**/*",
+      "!node_modules/motion-*/**/*",
+      "!node_modules/lucide-react/**/*",
+      "!node_modules/react/**/*",
+      "!node_modules/react-dom/**/*",
+      "!node_modules/dexie/**/*",
+      "!node_modules/dexie-react-hooks/**/*",
+      "!node_modules/scheduler/**/*",
+      "!node_modules/styled-jsx/**/*",
+      "!node_modules/tippy.js/**/*",
+      "!node_modules/@popperjs/**/*",
+      "!node_modules/caniuse-lite/**/*",
+      "!node_modules/postcss/**/*",
+      "!node_modules/sharp/**/*",
+      "!node_modules/busboy/**/*",
+      "!node_modules/@img/**/*"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Default-Plus",
+        "repo": "yeobaek"
+      }
+    ],
+    "extraResources": [
+      {
+        "from": "out",
+        "to": "out"
+      }
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Yeobaek",
+      "language": "1042",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
+      "artifactName": "Yeobaek-Setup-${version}.exe"
+    },
+    "portable": {
+      "artifactName": "Yeobaek-${version}-Portable.exe"
+    }
+  },
+  "dependencies": {
+    "@tiptap/extension-highlight": "^2.11.5",
+    "@tiptap/extension-placeholder": "^2.11.5",
+    "@tiptap/extension-task-item": "^2.11.5",
+    "@tiptap/extension-task-list": "^2.11.5",
+    "@tiptap/extension-typography": "^2.11.5",
+    "@tiptap/pm": "^2.11.5",
+    "@tiptap/react": "^2.11.5",
+    "@tiptap/starter-kit": "^2.11.5",
+    "dexie": "^4.0.11",
+    "dexie-react-hooks": "^1.1.7",
+    "electron-updater": "^6.8.11",
+    "framer-motion": "^12.4.7",
+    "lucide-react": "^0.475.0",
+    "next": "^15.2.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/typography": "^0.5.16",
+    "@types/node": "^22.13.4",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "autoprefixer": "^10.4.20",
+    "cross-env": "^10.1.0",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "eslint": "^9.20.1",
+    "eslint-config-next": "^15.2.3",
+    "postcss": "^8.5.3",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.3"
+  }
+}
