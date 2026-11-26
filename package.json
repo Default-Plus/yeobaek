@@ -3,6 +3,7 @@
   "version": "0.1.2",
   "description": "타이포그래피 중심의 Local-First 미니멀 글쓰기 & 개인 생산성 앱",
   "author": "Default_Plus",
+  "license": "MIT",
   "private": true,
   "main": "electron/main.cjs",
   "scripts": {

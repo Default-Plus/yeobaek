@@ -3,6 +3,8 @@
 미니멀·타이포그래피 중심의 Local-First 개인 생산성 앱입니다.  
 메모, 할 일, 캘린더, 리마인더를 방해 요소 없는 차분한 글쓰기 경험 속에 통합합니다.
 
+> **Yeobaek** is an open-source, local-first minimalist writing and personal productivity app (notes, tasks, calendar, and reminders) built with Next.js, Electron, and Capacitor, with optional client-side Google Drive (`appDataFolder`) synchronization.
+
 ## 주요 기능
 
 - **Story → Entry 계층 구조:** 상단 가로 탭(`일상`, `메모`, `할 일`, `아이디어` 등)과 여백 중심의 에디토리얼 글 목록
@@ -46,3 +48,8 @@ npx cap open ios        # Xcode 열기 (macOS)
    - `NEXT_PUBLIC_GOOGLE_CLIENT_ID`
    - `NEXT_PUBLIC_GOOGLE_ANDROID_CLIENT_ID` (선택)
    - `NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID` (선택)
+
+## Code Signing & License
+
+- **License:** [MIT License](./LICENSE)
+- **Code Signing Policy:** See [CODE_SIGNING_POLICY.md](./CODE_SIGNING_POLICY.md). All official release builds are produced automatically from public source code via GitHub Actions.
