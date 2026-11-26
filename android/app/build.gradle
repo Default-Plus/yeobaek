@@ -1,4 +1,33 @@
+import groovy.json.JsonSlurper
+
 apply plugin: 'com.android.application'
+
+def packageJson = new JsonSlurper().parse(file('../../package.json'))
+def appVersionName = project.hasProperty('appVersionName')
+    ? project.property('appVersionName').toString()
+    : (packageJson.version ?: '0.1.0').toString()
+def semverParts = appVersionName.replaceAll(/[^0-9.].*$/, '').tokenize('.').collect { it.isInteger() ? it.toInteger() : 0 }
+def computedVersionCode = (semverParts.size() >= 3)
+    ? (semverParts[0] * 10000 + semverParts[1] * 100 + semverParts[2])
+    : 1
+def appVersionCode = project.hasProperty('appVersionCode')
+    ? project.property('appVersionCode').toString().toInteger()
+    : Math.max(1, computedVersionCode)
+
+def keystorePropsFile = rootProject.file('keystore.properties')
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
+def releaseStoreFilePath = System.getenv('ANDROID_KEYSTORE_PATH') ?: keystoreProps.getProperty('storeFile')
+def releaseStorePassword = System.getenv('ANDROID_KEYSTORE_PASSWORD') ?: keystoreProps.getProperty('storePassword')
+def releaseKeyAlias = System.getenv('ANDROID_KEY_ALIAS') ?: keystoreProps.getProperty('keyAlias')
+def releaseKeyPassword = System.getenv('ANDROID_KEY_PASSWORD') ?: keystoreProps.getProperty('keyPassword')
+def releaseStoreFile = releaseStoreFilePath
+    ? (new File(releaseStoreFilePath).isAbsolute() ? file(releaseStoreFilePath) : rootProject.file(releaseStoreFilePath))
+    : null
+def hasReleaseSigning = releaseStoreFile != null && releaseStoreFile.exists() && releaseStorePassword && releaseKeyAlias && releaseKeyPassword
 
 android {
     namespace = "app.defaultplus.yeobaek"
@@ -7,8 +36,8 @@ android {
         applicationId "app.defaultplus.yeobaek"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode appVersionCode
+        versionName appVersionName
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,8 +45,21 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile releaseStoreFile
+                storePassword releaseStorePassword
+                keyAlias releaseKeyAlias
+                keyPassword releaseKeyPassword
+            }
+        }
+    }
     buildTypes {
         release {
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
