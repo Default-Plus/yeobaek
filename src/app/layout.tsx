@@ -1,20 +1,5 @@
 import type { Metadata, Viewport } from 'next';
-import { Gowun_Batang, Noto_Sans_KR } from 'next/font/google';
 import './globals.css';
-
-const gowunBatang = Gowun_Batang({
-  subsets: ['latin'],
-  weight: ['400', '700'],
-  variable: '--font-serif',
-  display: 'swap',
-});
-
-const notoSansKr = Noto_Sans_KR({
-  subsets: ['latin'],
-  weight: ['300', '400', '500', '600'],
-  variable: '--font-sans',
-  display: 'swap',
-});
 
 export const metadata: Metadata = {
   title: '여백 — 미니멀 글쓰기 & 개인 생산성',
@@ -48,11 +33,16 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="ko"
-      className={`${gowunBatang.variable} ${notoSansKr.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="ko" suppressHydrationWarning>
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {/* eslint-disable-next-line @next/next/no-page-custom-font */}
+        <link
+          href="https://fonts.googleapis.com/css2?family=Gowun+Batang:wght@400;700&family=Noto+Sans+KR:wght@300;400;500;600&display=swap"
+          rel="stylesheet"
+        />
+      </head>
       <body className="min-h-screen bg-paper font-sans text-ink antialiased selection:bg-accent-soft">
         {children}
       </body>

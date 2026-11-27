@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 :root {
+  --font-serif: 'Gowun Batang', 'Batang', 'AppleMyungjo', Georgia, serif;
+  --font-sans: 'Noto Sans KR', 'Apple SD Gothic Neo', 'Malgun Gothic', system-ui, -apple-system, sans-serif;
   --bg-paper: #faf9f6;
   --bg-subtle: #f3f1eb;
   --bg-elevated: #ffffff;
