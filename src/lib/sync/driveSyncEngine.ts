@@ -309,10 +309,35 @@ class DriveSyncEngine {
   private async performDiffSync(token: string): Promise<SyncSummary> {
     const lastSyncIndex = await metaRepository.getLastSyncIndex();
     const baseIndex = lastSyncIndex ?? emptyIndex();
-    const remoteIndexMeta = await this.findAppDataFile(token, SYNC_INDEX_FILENAME);
+
+    // Fetch all matching sync_index.json files ordered newest-first to prevent duplicate index splits
+    const remoteIndexFiles = await this.findAppDataFiles(token, SYNC_INDEX_FILENAME);
+    const remoteIndexMeta = remoteIndexFiles[0] ?? null;
     const remoteIndex: SyncIndex = remoteIndexMeta
       ? (await this.downloadJson<SyncIndex>(token, remoteIndexMeta.id)) ?? emptyIndex()
       : emptyIndex();
+
+    // If duplicate sync_index.json files were ever created concurrently, merge older entries & delete duplicates
+    if (remoteIndexFiles.length > 1) {
+      for (const extra of remoteIndexFiles.slice(1)) {
+        const extraIndex = await this.downloadJson<SyncIndex>(token, extra.id).catch(() => null);
+        if (extraIndex) {
+          for (const [sid, entry] of Object.entries(extraIndex.stories || {})) {
+            const cur = remoteIndex.stories[sid];
+            if (!cur || entry.updatedAt > cur.updatedAt) {
+              remoteIndex.stories[sid] = entry;
+            }
+          }
+          for (const [nid, entry] of Object.entries(extraIndex.notes || {})) {
+            const cur = remoteIndex.notes[nid];
+            if (!cur || entry.updatedAt > cur.updatedAt) {
+              remoteIndex.notes[nid] = entry;
+            }
+          }
+        }
+        await this.deleteAppDataFile(token, extra.id).catch(() => undefined);
+      }
+    }
 
     // On a brand-new device's first sync, discard untouched local onboarding seed data
     // when Google Drive already has remote stories so default stories never duplicate.
@@ -444,9 +469,14 @@ class DriveSyncEngine {
           const sameContent =
             local.title === remoteNote.title &&
             local.content === remoteNote.content &&
-            local.isCompleted === remoteNote.isCompleted &&
-            local.targetDate === remoteNote.targetDate &&
-            local.isDeleted === remoteNote.isDeleted;
+            local.storyId === remoteNote.storyId &&
+            local.type === remoteNote.type &&
+            Boolean(local.isCompleted) === Boolean(remoteNote.isCompleted) &&
+            (local.targetDate || '') === (remoteNote.targetDate || '') &&
+            (local.startTime || '') === (remoteNote.startTime || '') &&
+            (local.endTime || '') === (remoteNote.endTime || '') &&
+            (local.reminderAt || '') === (remoteNote.reminderAt || '') &&
+            Boolean(local.isDeleted) === Boolean(remoteNote.isDeleted);
 
           if (local.updatedAt >= remoteNote.updatedAt) {
             const fileId = await this.upsertJsonFile(token, filename, local, remoteEntry.fileId);
@@ -548,9 +578,9 @@ class DriveSyncEngine {
     };
   }
 
-  private async findAppDataFile(token: string, name: string): Promise<DriveFileMeta | null> {
+  private async findAppDataFiles(token: string, name: string): Promise<DriveFileMeta[]> {
     const query = encodeURIComponent(`name='${name.replace(/'/g, "\\'")}' and trashed=false`);
-    const url = `${DRIVE_FILES_API}?spaces=appDataFolder&q=${query}&fields=files(id,name,modifiedTime)&pageSize=1`;
+    const url = `${DRIVE_FILES_API}?spaces=appDataFolder&q=${query}&orderBy=modifiedTime%20desc&fields=files(id,name,modifiedTime)&pageSize=10`;
 
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
@@ -559,7 +589,19 @@ class DriveSyncEngine {
       throw new Error(`Google Drive 조회 실패 (${res.status})`);
     }
     const data = (await res.json()) as { files?: DriveFileMeta[] };
-    return data.files?.[0] ?? null;
+    return data.files ?? [];
+  }
+
+  private async findAppDataFile(token: string, name: string): Promise<DriveFileMeta | null> {
+    const files = await this.findAppDataFiles(token, name);
+    return files[0] ?? null;
+  }
+
+  private async deleteAppDataFile(token: string, fileId: string): Promise<void> {
+    await fetch(`${DRIVE_FILES_API}/${fileId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
   }
 
   private async downloadJson<T>(token: string, fileId: string): Promise<T | null> {
@@ -595,9 +637,21 @@ class DriveSyncEngine {
     existingFileId?: string
   ): Promise<string> {
     const jsonBody = JSON.stringify(payload);
+    let targetFileId = existingFileId;
 
-    if (existingFileId) {
-      const patchRes = await fetch(`${DRIVE_UPLOAD_API}/${existingFileId}?uploadType=media`, {
+    // Prevent duplicate Drive files when existingFileId wasn't cached yet
+    if (!targetFileId) {
+      const existingFiles = await this.findAppDataFiles(token, filename);
+      if (existingFiles.length > 0) {
+        targetFileId = existingFiles[0].id;
+        for (const extra of existingFiles.slice(1)) {
+          await this.deleteAppDataFile(token, extra.id).catch(() => undefined);
+        }
+      }
+    }
+
+    if (targetFileId) {
+      const patchRes = await fetch(`${DRIVE_UPLOAD_API}/${targetFileId}?uploadType=media`, {
         method: 'PATCH',
         headers: {
           Authorization: `Bearer ${token}`,
@@ -606,7 +660,7 @@ class DriveSyncEngine {
         body: jsonBody,
       });
       if (patchRes.ok) {
-        return existingFileId;
+        return targetFileId;
       }
       if (patchRes.status !== 404) {
         throw new Error(`Google Drive 파일 업데이트 실패 (${patchRes.status})`);

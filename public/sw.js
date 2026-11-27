@@ -1,4 +1,4 @@
-const CACHE_NAME = 'yeobaek-shell-v2';
+const CACHE_NAME = 'yeobaek-shell-v3';
 const SHELL_ASSETS = ['/', '/manifest.json', '/icon.svg'];
 
 self.addEventListener('install', (event) => {
@@ -26,10 +26,33 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
-  // Skip external Google APIs and Next.js HMR endpoints
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/_next/webpack-hmr')) return;
+  // Never cache OAuth mobile callback redirects
+  if (url.pathname.startsWith('/auth/')) return;
 
+  // Cache-First for immutable Next.js hashed static assets (minimizes mobile data & Vercel bandwidth)
+  if (url.pathname.startsWith('/_next/static/')) {
+    event.respondWith(
+      caches.match(request).then(
+        (cached) =>
+          cached ||
+          fetch(request).then((response) => {
+            if (response && response.status === 200 && response.type === 'basic') {
+              const clone = response.clone();
+              caches
+                .open(CACHE_NAME)
+                .then((cache) => cache.put(request, clone))
+                .catch(() => undefined);
+            }
+            return response;
+          })
+      )
+    );
+    return;
+  }
+
+  // Network-First for HTML pages and dynamic routes
   event.respondWith(
     fetch(request)
       .then((response) => {

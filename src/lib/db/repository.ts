@@ -477,17 +477,21 @@ export async function deduplicateSeedArtifacts(): Promise<{
     }
   }
 
-  // 2. Deduplicate identical untouched welcome/sample notes
-  const seenSeedNotes = new Map<string, NoteItem>();
+  // 2. Deduplicate identical duplicate notes within the same story (exact title + content + type + date)
+  const seenNoteSignatures = new Map<string, NoteItem>();
   const sortedActiveNotes = [...activeNotes].sort((a, b) => a.createdAt - b.createdAt);
 
   for (const note of sortedActiveNotes) {
-    if (!DEFAULT_SEED_NOTE_TITLES.has(note.title)) continue;
-    const signature = `${note.title}::${note.content}`;
-    const existing = seenSeedNotes.get(signature);
+    const normalizedTitle = note.title.trim();
+    const isSeedNote = DEFAULT_SEED_NOTE_TITLES.has(normalizedTitle);
+    const signature = isSeedNote
+      ? `seed::${normalizedTitle}::${note.content}`
+      : `user::${note.storyId}::${note.type}::${normalizedTitle}::${note.content}::${note.targetDate || ''}`;
+
+    const existing = seenNoteSignatures.get(signature);
     if (!existing) {
-      seenSeedNotes.set(signature, note);
-    } else {
+      seenNoteSignatures.set(signature, note);
+    } else if (isSeedNote || Math.abs(note.createdAt - existing.createdAt) < 10 * 60 * 1000) {
       const deletedNote: NoteItem = {
         ...note,
         isDeleted: true,

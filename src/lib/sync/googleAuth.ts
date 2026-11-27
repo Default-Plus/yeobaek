@@ -7,7 +7,8 @@ import { Browser } from '@capacitor/browser';
 const GIS_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
 const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
-const DEFAULT_MOBILE_REDIRECT_URI = 'app.defaultplus.yeobaek:/oauth2redirect';
+const DEFAULT_MOBILE_APP_SCHEME = 'app.defaultplus.yeobaek://oauth2redirect';
+const DEFAULT_MOBILE_BRIDGE_URI = 'https://yeobaek-theta.vercel.app/auth/mobile-callback';
 
 const DRIVE_SCOPES = [
   'https://www.googleapis.com/auth/drive.appdata',
@@ -79,32 +80,28 @@ export function isNativeMobile(): boolean {
   return typeof window !== 'undefined' && Capacitor.isNativePlatform();
 }
 
-export function getBuiltInGoogleClientId(): string {
-  if (isNativeMobile()) {
-    const platform = Capacitor.getPlatform();
-    if (platform === 'android') {
-      return (
-        process.env.NEXT_PUBLIC_GOOGLE_ANDROID_CLIENT_ID ||
-        process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-        ''
-      );
-    }
-    if (platform === 'ios') {
-      return (
-        process.env.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID ||
-        process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ||
-        ''
-      );
-    }
+function getDedicatedMobileClientId(): string {
+  if (!isNativeMobile()) return '';
+  const platform = Capacitor.getPlatform();
+  if (platform === 'android') {
+    return (process.env.NEXT_PUBLIC_GOOGLE_ANDROID_CLIENT_ID || '').trim();
   }
-  return process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '';
+  if (platform === 'ios') {
+    return (process.env.NEXT_PUBLIC_GOOGLE_IOS_CLIENT_ID || '').trim();
+  }
+  return '';
 }
 
-function resolveMobileRedirectUri(clientId: string): string {
+export function getBuiltInGoogleClientId(): string {
+  const dedicated = getDedicatedMobileClientId();
+  if (dedicated) return dedicated;
+  return (process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || '').trim();
+}
+
+function resolveNativePkceRedirectUri(clientId: string): string {
   if (process.env.NEXT_PUBLIC_GOOGLE_MOBILE_REDIRECT_URI) {
     return process.env.NEXT_PUBLIC_GOOGLE_MOBILE_REDIRECT_URI;
   }
-  // Google iOS/Android native OAuth clients accept reversed client ID scheme or app custom scheme
   if (
     Capacitor.getPlatform() === 'ios' &&
     clientId.endsWith('.apps.googleusercontent.com')
@@ -112,7 +109,13 @@ function resolveMobileRedirectUri(clientId: string): string {
     const prefix = clientId.replace('.apps.googleusercontent.com', '');
     return `com.googleusercontent.apps.${prefix}:/oauth2redirect`;
   }
-  return DEFAULT_MOBILE_REDIRECT_URI;
+  return DEFAULT_MOBILE_APP_SCHEME;
+}
+
+function resolveMobileWebBridgeUri(): string {
+  return (
+    process.env.NEXT_PUBLIC_GOOGLE_MOBILE_BRIDGE_URI || DEFAULT_MOBILE_BRIDGE_URI
+  ).trim();
 }
 
 class GoogleAuthManager {
@@ -178,7 +181,12 @@ class GoogleAuthManager {
     }
 
     if (isNativeMobile()) {
-      return this.requestMobilePkceToken(trimmed);
+      // If a dedicated native Android/iOS Client ID is configured, use Authorization Code + PKCE.
+      // Otherwise reuse the Web OAuth Client ID seamlessly via our HTTPS callback bridge.
+      if (getDedicatedMobileClientId()) {
+        return this.requestMobilePkceToken(trimmed);
+      }
+      return this.requestMobileWebBridgeToken(trimmed);
     }
 
     const token = await this.requestWebGisToken(trimmed, prompt);
@@ -221,28 +229,8 @@ class GoogleAuthManager {
     });
   }
 
-  /**
-   * RFC 7636 OAuth 2.0 Authorization Code + PKCE flow for Android & iOS via system browser
-   * (Chrome Custom Tabs / ASWebAuthenticationSession). Returns access_token + refresh_token.
-   */
-  private async requestMobilePkceToken(clientId: string): Promise<AuthTokenResult> {
-    const codeVerifier = generateRandomToken(48);
-    const codeChallenge = await generateCodeChallenge(codeVerifier);
-    const state = generateRandomToken(24);
-    const redirectUri = resolveMobileRedirectUri(clientId);
-
-    const authUrl = new URL(GOOGLE_AUTH_ENDPOINT);
-    authUrl.searchParams.set('client_id', clientId);
-    authUrl.searchParams.set('redirect_uri', redirectUri);
-    authUrl.searchParams.set('response_type', 'code');
-    authUrl.searchParams.set('scope', DRIVE_SCOPES);
-    authUrl.searchParams.set('code_challenge', codeChallenge);
-    authUrl.searchParams.set('code_challenge_method', 'S256');
-    authUrl.searchParams.set('state', state);
-    authUrl.searchParams.set('access_type', 'offline');
-    authUrl.searchParams.set('prompt', 'select_account consent');
-
-    const callbackUrl = await new Promise<string>((resolve, reject) => {
+  private waitForMobileCallback(authUrl: string, expectedSchemePrefix: string): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
       let settled = false;
       let urlListenerHandle: { remove: () => Promise<void> } | null = null;
       let browserFinishedHandle: { remove: () => Promise<void> } | null = null;
@@ -261,30 +249,35 @@ class GoogleAuthManager {
 
       void App.addListener('appUrlOpen', (event) => {
         if (settled) return;
-        if (!event.url.startsWith(redirectUri)) return;
+        const normalizedUrl = event.url || '';
+        const matchesCustomScheme =
+          normalizedUrl.startsWith(expectedSchemePrefix) ||
+          normalizedUrl.startsWith('app.defaultplus.yeobaek://') ||
+          normalizedUrl.startsWith('app.defaultplus.yeobaek:/');
+        if (!matchesCustomScheme) return;
+
         settled = true;
         window.clearTimeout(timeoutId);
         cleanup();
         void Browser.close().catch(() => undefined);
-        resolve(event.url);
+        resolve(normalizedUrl);
       }).then((h) => {
         urlListenerHandle = h;
       });
 
       void Browser.addListener('browserFinished', () => {
-        // Give appUrlOpen a brief moment to deliver the redirect before treating as cancel
         window.setTimeout(() => {
           if (settled) return;
           settled = true;
           window.clearTimeout(timeoutId);
           cleanup();
           reject(new Error('Google 로그인이 취소되었습니다.'));
-        }, 700);
+        }, 1200);
       }).then((h) => {
         browserFinishedHandle = h;
       });
 
-      void Browser.open({ url: authUrl.toString(), presentationStyle: 'popover' }).catch((err) => {
+      void Browser.open({ url: authUrl, presentationStyle: 'popover' }).catch((err) => {
         if (settled) return;
         settled = true;
         window.clearTimeout(timeoutId);
@@ -292,6 +285,80 @@ class GoogleAuthManager {
         reject(err instanceof Error ? err : new Error('시스템 브라우저를 열 수 없습니다.'));
       });
     });
+  }
+
+  /**
+   * Mobile OAuth flow reusing the existing Web OAuth Client ID via Chrome Custom Tabs / Safari
+   * + HTTPS callback bridge (/auth/mobile-callback -> app.defaultplus.yeobaek://oauth2redirect).
+   */
+  private async requestMobileWebBridgeToken(clientId: string): Promise<AuthTokenResult> {
+    const state = generateRandomToken(24);
+    const bridgeRedirectUri = resolveMobileWebBridgeUri();
+
+    const authUrl = new URL(GOOGLE_AUTH_ENDPOINT);
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', bridgeRedirectUri);
+    authUrl.searchParams.set('response_type', 'token');
+    authUrl.searchParams.set('scope', DRIVE_SCOPES);
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('include_granted_scopes', 'true');
+    authUrl.searchParams.set('prompt', 'select_account');
+
+    const callbackUrl = await this.waitForMobileCallback(
+      authUrl.toString(),
+      DEFAULT_MOBILE_APP_SCHEME
+    );
+
+    const hashIndex = callbackUrl.indexOf('#');
+    const queryIndex = callbackUrl.indexOf('?');
+    const rawParams =
+      hashIndex >= 0
+        ? callbackUrl.slice(hashIndex + 1)
+        : queryIndex >= 0
+          ? callbackUrl.slice(queryIndex + 1)
+          : '';
+    const params = new URLSearchParams(rawParams);
+
+    const returnedError = params.get('error');
+    if (returnedError) {
+      throw new Error(`Google 로그인 오류: ${returnedError}`);
+    }
+    const returnedState = params.get('state');
+    if (returnedState !== state) {
+      throw new Error('보안 검증(state)에 실패했습니다. 다시 시도해 주세요.');
+    }
+    const token = params.get('access_token');
+    if (!token) {
+      throw new Error('Google 액세스 토큰을 받지 못했습니다.');
+    }
+
+    const expiresInSec = Number(params.get('expires_in') || '3600') || 3600;
+    this.accessToken = token;
+    this.expiresAt = Date.now() + expiresInSec * 1000;
+    return { accessToken: token };
+  }
+
+  /**
+   * RFC 7636 OAuth 2.0 Authorization Code + PKCE flow for dedicated Android/iOS native OAuth clients.
+   */
+  private async requestMobilePkceToken(clientId: string): Promise<AuthTokenResult> {
+    const codeVerifier = generateRandomToken(48);
+    const codeChallenge = await generateCodeChallenge(codeVerifier);
+    const state = generateRandomToken(24);
+    const redirectUri = resolveNativePkceRedirectUri(clientId);
+
+    const authUrl = new URL(GOOGLE_AUTH_ENDPOINT);
+    authUrl.searchParams.set('client_id', clientId);
+    authUrl.searchParams.set('redirect_uri', redirectUri);
+    authUrl.searchParams.set('response_type', 'code');
+    authUrl.searchParams.set('scope', DRIVE_SCOPES);
+    authUrl.searchParams.set('code_challenge', codeChallenge);
+    authUrl.searchParams.set('code_challenge_method', 'S256');
+    authUrl.searchParams.set('state', state);
+    authUrl.searchParams.set('access_type', 'offline');
+    authUrl.searchParams.set('prompt', 'select_account consent');
+
+    const callbackUrl = await this.waitForMobileCallback(authUrl.toString(), redirectUri);
 
     const parsed = new URL(callbackUrl);
     const returnedError = parsed.searchParams.get('error');
