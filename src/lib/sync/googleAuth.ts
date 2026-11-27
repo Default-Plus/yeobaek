@@ -7,6 +7,7 @@ import { Browser } from '@capacitor/browser';
 const GIS_SCRIPT_URL = 'https://accounts.google.com/gsi/client';
 const GOOGLE_AUTH_ENDPOINT = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_ENDPOINT = 'https://oauth2.googleapis.com/token';
+const DEFAULT_NATIVE_PKCE_REDIRECT_URI = 'app.defaultplus.yeobaek:/oauth2redirect';
 const DEFAULT_MOBILE_APP_SCHEME = 'app.defaultplus.yeobaek://oauth2redirect';
 const DEFAULT_MOBILE_BRIDGE_URI = 'https://yeobaek-theta.vercel.app/auth/mobile-callback';
 
@@ -109,7 +110,7 @@ function resolveNativePkceRedirectUri(clientId: string): string {
     const prefix = clientId.replace('.apps.googleusercontent.com', '');
     return `com.googleusercontent.apps.${prefix}:/oauth2redirect`;
   }
-  return DEFAULT_MOBILE_APP_SCHEME;
+  return DEFAULT_NATIVE_PKCE_REDIRECT_URI;
 }
 
 function resolveMobileWebBridgeUri(): string {

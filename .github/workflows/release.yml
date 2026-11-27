@@ -94,11 +94,23 @@ jobs:
           npm run export:desktop
           npx cap sync android
 
-      - name: Build Android APK
+      - name: Build Android APK (Release signed if keystore secrets present)
         working-directory: android
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           chmod +x gradlew
-          ./gradlew assembleDebug
+          if [ -n "${ANDROID_KEYSTORE_BASE64}" ]; then
+            echo "${ANDROID_KEYSTORE_BASE64}" | base64 --decode > release.keystore
+            export ANDROID_KEYSTORE_PATH="$(pwd)/release.keystore"
+            ./gradlew assembleRelease
+            rm -f release.keystore
+          else
+            ./gradlew assembleDebug
+          fi
 
       - name: Rename and upload Android APK to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -107,5 +119,9 @@ jobs:
         run: |
           TAG_NAME="${GITHUB_REF_NAME}"
           APK_OUT="Yeobaek-${TAG_NAME}-android.apk"
-          cp android/app/build/outputs/apk/debug/app-debug.apk "${APK_OUT}"
+          if [ -f android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release.apk "${APK_OUT}"
+          else
+            cp android/app/build/outputs/apk/debug/app-debug.apk "${APK_OUT}"
+          fi
           gh release upload "${TAG_NAME}" "${APK_OUT}" --clobber
